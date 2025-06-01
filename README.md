@@ -45,9 +45,7 @@ project/
 
 ## Developer's Note
 
-The core of this project revolves around three main classes. Most development time was dedicated to making these classes robust and scalable, enabling them to be reused in other projects. I've tested and iterated on these components using a Jupyter notebook for easier debugging and experimentation.
-
-The file data.ipynb serves as a development sandbox where I explored Yahoo Finance API data structures and tested key functionalities prior to integrating them into the main application.
+The core of this project revolves around four main classes. Most of the development time was dedicated to making these classes robust and scalable, enabling reuse across future projects. I tested and iterated on them in a Jupyter notebook to simplify debugging and experimentation.
 
 Regarding the frontend, while I am comfortable with Streamlit and have used it alongside Pandas in previous data projects, I chose to prioritize the backend logic and prompt engineering for the LLM. For this phase, I collaborated with Claude 4 Sonnet to refine the user interface efficiently.
 
