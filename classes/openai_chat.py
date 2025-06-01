@@ -19,7 +19,7 @@ class StockAnalysisAI:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-4.1",
         temperature: float = 0.1,
         max_retries: int = 2,
         retry_delay: float = 0.5,  # seconds
