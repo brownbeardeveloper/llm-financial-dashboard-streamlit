@@ -40,7 +40,7 @@ class TechnicalIndicators:
         if column not in self.data.columns:
             raise ValueError(f"Column '{column}' not found in data.")
 
-        return self.data[column].rolling(window=period, min_periods=1).mean()
+        return self.data[column].rolling(window=period, min_periods=period).mean()
 
     def rsi(self, data_column: str = "close", window: int = 14) -> pd.Series:
         """

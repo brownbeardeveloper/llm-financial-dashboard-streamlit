@@ -4,8 +4,6 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 import os
-from datetime import datetime
-
 from classes.data_loader import DataLoader
 from classes.technical_indicators import TechnicalIndicators
 from classes.openai_chat import StockAnalysisAI
@@ -31,9 +29,13 @@ def main():
             "Time Interval", options=["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3
         )
 
-        sma_periods = st.multiselect(
-            "SMA Periods", options=[5, 10, 20, 50, 100, 200], default=[50]
+        sma_display = st.multiselect(
+            "SMA Display",
+            options=[5, 10, 20, 50, 100, 200],
+            default=[50, 200],
+            help="Choose which SMA lines to show in charts (all periods are calculated for AI analysis)",
         )
+
         rsi_period = st.slider("RSI Period", 10, 30, 14)
 
         benchmark = st.selectbox(
@@ -47,17 +49,19 @@ def main():
         )
 
         enable_ai = st.checkbox("Enable AI", value=True)
+
+        # OpenAI API Key
         if enable_ai:
             openai_key = st.text_input("OpenAI API Key", type="password")
 
     if symbols:
-        data = load_data(symbols, benchmark, period, sma_periods, rsi_period)
+        data = load_data(symbols, benchmark, period, rsi_period)
 
         if data:
             tab1, tab2, tab3 = st.tabs(["📊 Charts", "🎯 KPIs", "🤖 AI Insights"])
 
             with tab1:
-                display_charts(data, benchmark)
+                display_charts(data, benchmark, sma_display)
 
             with tab2:
                 display_kpis(data, symbols)
@@ -69,28 +73,58 @@ def main():
                     st.info("Enable AI in sidebar")
 
 
-def load_data(symbols, benchmark, period, sma_periods, rsi_period):
+def load_data(symbols, benchmark, period, rsi_period):
     data = {}
+
+    # Map display periods to extended periods for SMA calculation
+    # Load extra data to ensure SMAs are available for the full display period
+    extended_period_map = {
+        "1mo": "1y",  # Load 1 year to calculate SMAs for 1 month display
+        "3mo": "1y",  # Load 1 year to calculate SMAs for 3 months display
+        "6mo": "2y",  # Load 2 years to calculate SMAs for 6 months display
+        "1y": "2y",  # Load 2 years to calculate SMAs for 1 year display
+        "2y": "5y",  # Load 5 years to calculate SMAs for 2 years display
+        "5y": "max",  # Load max data for 5 years display
+    }
+
+    extended_period = extended_period_map.get(period, period)
 
     try:
         with st.spinner("Loading data..."):
             for symbol in symbols:
-                loader = DataLoader(symbol, period)
-                stock_data = loader.data
+                # Load extended data for SMA calculation
+                loader_extended = DataLoader(symbol, extended_period)
+                stock_data_extended = loader_extended.data
+                indicators = TechnicalIndicators(stock_data_extended)
 
-                indicators = TechnicalIndicators(stock_data)
-
-                # Calculate multiple SMA periods
+                # Calculate all standard SMA periods automatically on extended data
+                sma_periods = [5, 10, 20, 50, 100, 200]
                 for sma_period in sma_periods:
-                    stock_data[f"sma_{sma_period}"] = indicators.sma(sma_period)
+                    stock_data_extended[f"sma_{sma_period}"] = indicators.sma(
+                        sma_period
+                    )
 
-                stock_data["rsi"] = indicators.rsi(window=rsi_period)
+                stock_data_extended["rsi"] = indicators.rsi(window=rsi_period)
+
+                # Now load the display period data and get the date range
+                loader_display = DataLoader(symbol, period)
+                stock_data_display = loader_display.data
+
+                # Extract the display date range
+                display_start = stock_data_display.index[0]
+                display_end = stock_data_display.index[-1]
+
+                # Trim extended data to display period while keeping calculated SMAs
+                stock_data = stock_data_extended.loc[display_start:display_end].copy()
+
+                # Add percentage change calculation
                 stock_data["pct_change"] = calculate_percentage_change(
                     stock_data["close"]
                 )
 
-                data[symbol] = {"data": stock_data, "loader": loader}
+                data[symbol] = {"data": stock_data, "loader": loader_display}
 
+            # Load benchmark data for display period only
             benchmark_loader = DataLoader(benchmark, period)
             benchmark_data = benchmark_loader.data
             benchmark_data["pct_change"] = calculate_percentage_change(
@@ -105,7 +139,7 @@ def load_data(symbols, benchmark, period, sma_periods, rsi_period):
         return None
 
 
-def display_charts(data, benchmark):
+def display_charts(data, benchmark, sma_display):
     benchmark_data = data["benchmark"]["data"]
     benchmark_symbol = data["benchmark"]["symbol"]
 
@@ -132,37 +166,11 @@ def display_charts(data, benchmark):
                 )
             )
 
-            # Add SMA lines for each stock (as percentage change)
-            sma_columns = [col for col in stock_data.columns if col.startswith("sma_")]
-            sma_colors = [
-                "lightcoral",
-                "lightblue",
-                "lightgreen",
-                "plum",
-                "orange",
-                "tan",
-            ]
-
-            for i, sma_col in enumerate(sma_columns):
-                sma_period = sma_col.split("_")[1]
-                sma_pct_change = calculate_percentage_change(stock_data[sma_col])
-                color = sma_colors[i % len(sma_colors)]
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=stock_data.index,
-                        y=sma_pct_change,
-                        name=f"{symbol} SMA{sma_period}",
-                        line=dict(color=color, width=1, dash="dot"),
-                        opacity=0.7,
-                    )
-                )
-
     fig.add_trace(
         go.Scatter(
             x=benchmark_data.index,
             y=benchmark_data["pct_change"],
-            name=f"{benchmark_name} (Benchmark)",
+            name=f"{benchmark_name} (Market Index)",
             line=dict(color="orange", width=1),
         )
     )
@@ -182,7 +190,7 @@ def display_charts(data, benchmark):
 
     # Add explanation note
     st.caption(
-        f"📊 Chart shows percentage returns for your selected companies vs the {benchmark_name} market benchmark (gray dashed line)"
+        f"📊 Chart shows percentage returns for your selected companies vs the {benchmark_name} market index (orange line)"
     )
 
     # Improved layout for multiple companies
@@ -192,7 +200,7 @@ def display_charts(data, benchmark):
         cols = st.columns(num_companies)
         for i, symbol in enumerate([s for s in data if s != "benchmark"]):
             with cols[i]:
-                display_technical_chart(data[symbol]["data"], symbol)
+                display_technical_chart(data[symbol]["data"], symbol, sma_display)
     else:
         # Use 2 rows for better readability when many companies
         companies = [s for s in data if s != "benchmark"]
@@ -201,7 +209,9 @@ def display_charts(data, benchmark):
         cols1 = st.columns(min(4, len(companies)))
         for i in range(min(4, len(companies))):
             with cols1[i]:
-                display_technical_chart(data[companies[i]]["data"], companies[i])
+                display_technical_chart(
+                    data[companies[i]]["data"], companies[i], sma_display
+                )
 
         # Second row - remaining companies
         if len(companies) > 4:
@@ -209,10 +219,10 @@ def display_charts(data, benchmark):
             cols2 = st.columns(len(remaining))
             for i, symbol in enumerate(remaining):
                 with cols2[i]:
-                    display_technical_chart(data[symbol]["data"], symbol)
+                    display_technical_chart(data[symbol]["data"], symbol, sma_display)
 
 
-def display_technical_chart(stock_data, symbol):
+def display_technical_chart(stock_data, symbol, sma_display):
     st.subheader(f"{symbol} Technical")
 
     fig = make_subplots(
@@ -248,17 +258,18 @@ def display_technical_chart(stock_data, symbol):
 
     for i, sma_col in enumerate(sma_columns):
         sma_period = sma_col.split("_")[1]
-        color = sma_colors[i % len(sma_colors)]
-        fig.add_trace(
-            go.Scatter(
-                x=stock_data.index,
-                y=stock_data[sma_col],
-                name=f"SMA{sma_period}",
-                line=dict(color=color, width=1),
-            ),
-            row=1,
-            col=1,
-        )
+        if int(sma_period) in sma_display:
+            color = sma_colors[i % len(sma_colors)]
+            fig.add_trace(
+                go.Scatter(
+                    x=stock_data.index,
+                    y=stock_data[sma_col],
+                    name=f"SMA{sma_period}",
+                    line=dict(color=color, width=1),
+                ),
+                row=1,
+                col=1,
+            )
 
     # Always green volume
     fig.add_trace(
@@ -379,6 +390,7 @@ def display_ai(data, symbols, benchmark, openai_key):
             with st.spinner(f"Analyzing {symbol}..."):
                 stock_data = data[symbol]["data"].copy()
                 stock_data["ma50"] = stock_data["sma_50"]
+                stock_data["ma200"] = stock_data["sma_200"]
                 stock_data["rsi_14"] = stock_data["rsi"]
 
                 benchmark_data = data["benchmark"]["data"]
