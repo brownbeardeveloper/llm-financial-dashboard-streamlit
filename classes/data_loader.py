@@ -16,6 +16,8 @@ class DataLoader:
     - Beta (market risk)
     """
 
+    VALID_PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"]
+
     def __init__(self, symbol: str, period: str = "1y"):
         """
         Initialize DataLoader for a specific stock symbol.
@@ -23,8 +25,17 @@ class DataLoader:
         Args:
             symbol: Stock ticker symbol (e.g., 'AAPL', 'MSFT')
             period: Time period for data ('1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max')
+
+        Raises:
+            ValueError: If symbol is empty or period is invalid
         """
-        self.symbol = symbol.upper()
+        if not symbol or not symbol.strip():
+            raise ValueError("Symbol cannot be empty.")
+
+        if period not in self.VALID_PERIODS:
+            raise ValueError("Invalid period.")
+
+        self.symbol = symbol.upper().strip()
         self.period = period
         self._data: Optional[pd.DataFrame] = None
 
@@ -35,6 +46,10 @@ class DataLoader:
 
         Returns:
             DataFrame with columns: open, high, low, close, volume, pe, profit_margin, roe, current_ratio, beta
+
+        Raises:
+            ValueError: If data or company information unavailable
+            Other exceptions from yfinance library may bubble up naturally
         """
         if self._data is None:
             self._data = self._load_data()
@@ -48,46 +63,43 @@ class DataLoader:
             DataFrame with OHLCV data and financial KPIs
 
         Raises:
-            ValueError: If invalid period or no data found
+            ValueError: If no data found or company info unavailable
+            Other exceptions from yfinance library bubble up naturally
         """
-        if self.period not in [
-            "1mo",
-            "3mo",
-            "6mo",
-            "1y",
-            "2y",
-            "5y",
-            "10y",
-            "ytd",
-            "max",
-        ]:
-            raise ValueError(f"Invalid period: {self.period}")
+        try:
+            ticker = yf.Ticker(self.symbol)
+            history_data = ticker.history(period=self.period)
 
-        ticker = yf.Ticker(self.symbol)
-        history_data = ticker.history(period=self.period)
+            if history_data.empty:
+                raise ValueError(f"No data found for '{self.symbol}'")
 
-        if history_data.empty:
-            raise ValueError(f"No data found for symbol: {self.symbol}")
+            info = ticker.info
 
-        info = ticker.info
+            if not info:
+                raise ValueError(f"Company KPIs unavailable for '{self.symbol}'")
 
-        data = pd.DataFrame()
+            # Create DataFrame
+            data = pd.DataFrame()
+            data["date"] = history_data.index.date
+            data["open"] = history_data["Open"].values
+            data["high"] = history_data["High"].values
+            data["low"] = history_data["Low"].values
+            data["close"] = history_data["Close"].values
+            data["volume"] = history_data["Volume"].values
 
-        data["date"] = history_data.index.date
-        data["open"] = history_data["Open"].values
-        data["high"] = history_data["High"].values
-        data["low"] = history_data["Low"].values
-        data["close"] = history_data["Close"].values
-        data["volume"] = history_data["Volume"].values
+            # Add KPIs
+            data["pe"] = info.get("trailingPE", np.nan)
+            data["profit_margin"] = info.get("profitMargins", np.nan)
+            data["roe"] = info.get("returnOnEquity", np.nan)
+            data["current_ratio"] = info.get("currentRatio", np.nan)
+            data["beta"] = info.get("beta", np.nan)
 
-        data["pe"] = info.get("trailingPE", np.nan)
-        data["profit_margin"] = info.get("profitMargins", np.nan)
-        data["roe"] = info.get("returnOnEquity", np.nan)
-        data["current_ratio"] = info.get("currentRatio", np.nan)
-        data["beta"] = info.get("beta", np.nan)
+            # Set date as index
+            data.set_index("date", inplace=True)
+            return data
 
-        data.set_index("date", inplace=True)
-        return data
+        except ValueError as e:
+            raise e
 
     def get_kpi_summary(self) -> dict:
         """

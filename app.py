@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 import os
-from classes.data_loader import DataLoader
+from classes.data_loader import DataLoader, DataLoaderError
 from classes.technical_indicators import TechnicalIndicators
 from classes.openai_chat import StockAnalysisAI
 from classes.custom_exceptions import ChatError, MissingOpenAIKeyError
@@ -135,8 +135,11 @@ def load_data(symbols, benchmark, period, rsi_period):
             data["benchmark"] = {"data": benchmark_data, "symbol": benchmark}
 
         return data
+    except DataLoaderError as e:
+        st.error(str(e))
+        return None
     except Exception as e:
-        st.error(f"Data loading failed: {e}")
+        st.error(f"Unexpected error: {e}")
         return None
 
 
