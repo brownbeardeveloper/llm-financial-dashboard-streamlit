@@ -7,6 +7,7 @@ import os
 from classes.data_loader import DataLoader
 from classes.technical_indicators import TechnicalIndicators
 from classes.openai_chat import StockAnalysisAI
+from classes.custom_exceptions import ChatError, MissingOpenAIKeyError
 from utils import calculate_percentage_change
 
 # Page configuration
@@ -135,7 +136,7 @@ def load_data(symbols, benchmark, period, rsi_period):
 
         return data
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.error(f"Data loading failed: {e}")
         return None
 
 
@@ -408,8 +409,10 @@ def display_ai(data, symbols, benchmark, openai_key):
                     unsafe_allow_html=True,
                 )
 
-    except Exception as e:
-        st.error(f"AI Analysis failed: {e}")
+    except MissingOpenAIKeyError as e:
+        st.error(str(e))
+    except ChatError as e:
+        st.error(str(e))
 
 
 if __name__ == "__main__":

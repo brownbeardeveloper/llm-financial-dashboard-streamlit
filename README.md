@@ -26,21 +26,22 @@ streamlit run app.py
 
 ```
 project/
-├── app.py                 # Main Streamlit application
-├── utils.py               # Helper functions
-├── requirements.txt       # Python dependencies
-├── data.ipynb             # Data analysis notebook
-├── classes/               # Core modules
-│   ├── data_loader.py     # Yahoo Finance data fetching
+├── app.py                       # Main Streamlit application
+├── utils.py                     # Helper functions
+├── requirements.txt             # Python dependencies
+├── data.ipynb                   # Data analysis notebook
+├── classes/                     # Core modules
+│   ├── data_loader.py           # Yahoo Finance data fetching
 │   ├── technical_indicators.py  # SMA, RSI calculations
-│   └── openai_chat.py     # AI analysis integration
+│   ├── openai_chat.py           # AI analysis integration
+│   └── custom_exceptions.py     # Custom exception classes
 └── README.md
 ```
 
 
 ## Developer's Note
 
-The core of this project revolves around three main classes. Most development time was dedicated to making these classes robust and scalable, enabling them to be reused in other projects. I’ve tested and iterated on these components using a Jupyter notebook for easier debugging and experimentation.
+The core of this project revolves around three main classes. Most development time was dedicated to making these classes robust and scalable, enabling them to be reused in other projects. I've tested and iterated on these components using a Jupyter notebook for easier debugging and experimentation.
 
 Regarding the frontend, while I am comfortable with Streamlit and have used it alongside Pandas in previous data projects, I chose to prioritize the backend logic and prompt engineering for the LLM. For this phase, I collaborated with Claude 4 Sonnet to refine the user interface efficiently.
 

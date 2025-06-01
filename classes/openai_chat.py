@@ -5,6 +5,12 @@ from openai import OpenAI
 from openai import APIError, RateLimitError, APITimeoutError
 import pandas as pd
 from utils import calculate_percentage_change
+from .custom_exceptions import (
+    ChatError,
+    MissingOpenAIKeyError,
+    MessageValidationError,
+    OpenAIErrorParser,
+)
 
 
 class StockAnalysisAI:
@@ -16,7 +22,7 @@ class StockAnalysisAI:
         model: str = "gpt-4o-mini",
         temperature: float = 0.1,
         max_retries: int = 2,
-        retry_delay: float = 0.5,
+        retry_delay: float = 0.5,  # seconds
     ):
         """
         Initialize the stock analysis AI client.
@@ -24,9 +30,12 @@ class StockAnalysisAI:
         Args:
             api_key: OpenAI API key (uses OPENAI_API_KEY env var if None)
             model: Model to use (default: gpt-4o-mini)
-            temperature: Sampling temperature (0.2 for consistent analysis)
+            temperature: Sampling temperature (0.1 for consistent analysis)
             max_retries: Maximum retry attempts for failed requests
             retry_delay: Delay between retries in seconds
+
+        Raises:
+            MissingOpenAIKeyError: If no API key is provided
         """
         self.model = model
         self.temperature = temperature
@@ -35,9 +44,7 @@ class StockAnalysisAI:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
 
         if not self.api_key:
-            raise ValueError(
-                "Missing OpenAI API key. Set the OPENAI_API_KEY environment variable."
-            )
+            raise MissingOpenAIKeyError("OpenAI API key required")
 
         self.client = OpenAI(api_key=self.api_key)
 
@@ -50,12 +57,13 @@ class StockAnalysisAI:
 
         Args:
             messages: List of message dictionaries with 'role' and 'content'
-            stream: Whether to stream the response
-            temperature: Override default temperature
-            max_tokens: Maximum tokens in response
 
         Returns:
             String response or generator for streaming
+
+        Raises:
+            ChatError: If OpenAI API fails after retries
+            MessageValidationError: If message format is invalid
         """
         # Validate messages
         self._validate_messages(messages)
@@ -72,8 +80,11 @@ class StockAnalysisAI:
             except (RateLimitError, APITimeoutError, APIError) as e:
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
-                else:
-                    raise
+                    continue
+
+                # Convert to user-friendly error message
+                user_error = OpenAIErrorParser.get_user_friendly_message(e)
+                raise ChatError(user_error)
 
     def analyze_stock(
         self,
@@ -85,6 +96,20 @@ class StockAnalysisAI:
         """
         Analyze a stock versus its benchmark using DataFrames and KPIs.
         Generates a concise, institution-grade investment summary.
+
+        Args:
+            stock: DataFrame with stock data including close, volume, indicators
+            index: DataFrame with benchmark index data
+            stock_symbol: Stock ticker symbol
+            index_symbol: Index ticker symbol
+
+        Returns:
+            Institution-grade investment summary
+
+        Raises:
+            ChatError: If OpenAI API fails
+            MessageValidationError: If message format is invalid
+            MissingOpenAIKeyError: If API key is missing
         """
         # Calculate period percentage changes
         stock_change_pct = calculate_percentage_change(stock["close"]).iloc[-1]
@@ -109,7 +134,7 @@ class StockAnalysisAI:
             roe_pct = None
 
         prompt = f"""
-        Write a concise investment summary (3–5 sentences) for the stock {stock_symbol}, suitable for institutional portfolio review.
+        Write a concise investment summary (3-5 sentences) for the stock {stock_symbol}, suitable for institutional portfolio review.
 
         Period percentage change:
         - {stock_symbol}: {stock_change_pct:+.2f}%
@@ -147,6 +172,20 @@ class StockAnalysisAI:
         return self.quick_analysis(prompt)
 
     def quick_analysis(self, prompt: str) -> str:
+        """
+        Quick analysis using a single prompt.
+
+        Args:
+            prompt: Analysis prompt with data and instructions
+
+        Returns:
+            AI-generated analysis
+
+        Raises:
+            ChatError: If OpenAI API fails
+            MessageValidationError: If message format is invalid
+            MissingOpenAIKeyError: If API key is missing
+        """
         messages = [
             {
                 "role": "system",
@@ -163,16 +202,18 @@ class StockAnalysisAI:
     def _validate_messages(self, messages: List[Dict[str, str]]) -> None:
         """Validate message format."""
         if not messages:
-            raise ValueError("Messages list cannot be empty")
+            raise MessageValidationError("Messages list cannot be empty")
 
         for i, msg in enumerate(messages):
             if not isinstance(msg, dict):
-                raise ValueError(f"Message {i} must be a dictionary")
+                raise MessageValidationError(f"Message {i} must be a dictionary")
 
             if "role" not in msg or "content" not in msg:
-                raise ValueError(f"Message {i} must have 'role' and 'content' keys")
+                raise MessageValidationError(
+                    f"Message {i} must have 'role' and 'content' keys"
+                )
 
             if msg["role"] not in ["system", "user", "assistant"]:
-                raise ValueError(
+                raise MessageValidationError(
                     f"Message {i} role must be 'system', 'user', or 'assistant'"
                 )
